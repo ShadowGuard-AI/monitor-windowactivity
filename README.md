@@ -1,3 +1,5 @@
+![Banner](banner.png)
+
 # monitor-windowactivity
 Logs active window titles and processes, providing a timeline of user activity on the system. - Focused on System monitoring and alerts
 
