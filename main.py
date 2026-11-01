@@ -31,6 +31,7 @@ def windows_provider():
     hwnd = user32.GetForegroundWindow()
     if not hwnd:
         return None, None
+    # I size the buffer from the length call plus one for the terminator. Guessing a fixed size truncates long titles silently, and a title is the whole point of this log.
     length = user32.GetWindowTextLengthW(hwnd)
     buffer = ctypes.create_unicode_buffer(length + 1)
     user32.GetWindowTextW(hwnd, buffer, length + 1)
@@ -52,6 +53,7 @@ def macos_provider():
         Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
         Quartz.kCGNullWindowID)
     for window in windows:
+        # I only accept layer 0 here. Higher layers are menus, docks, and overlays, and the first on-screen window in that layer is the closest thing macOS gives me to a foreground window.
         if window.get("kCGWindowLayer", 0) != 0:
             continue
         window_title = window.get("kCGWindowName") or ""
@@ -70,6 +72,7 @@ def linux_provider():
     from Xlib import display
     disp = display.Display()
     focus = disp.get_input_focus().focus
+    # On X11 there is no true foreground call, so input focus is my proxy. It can be a child window, which is why the title here can differ from the top level window a person sees.
     if focus is None:
         return None, None
     window_title = focus.get_wm_name()
@@ -91,6 +94,7 @@ def get_provider():
     """
     if sys.platform.startswith("win"):
         try:
+            # I probe the provider at selection time instead of failing inside the first poll. If this import check fails I want a clean refusal in main, not a crash five seconds into monitoring.
             ctypes.windll.user32  # noqa: B018
             return windows_provider
         except Exception:
@@ -142,6 +146,7 @@ def main():
         print("Error: Interval must be a positive integer.")
         return 1
 
+    # This is a blunt check and I know it rejects a few harmless names too. I keep it because the log path comes straight from the command line and I would rather refuse an odd name than write outside the working folder by accident.
     if ".." in output_file:
         logging.error("Invalid output file path (potential path traversal).")
         print("Error: Invalid output file path.")
@@ -155,6 +160,7 @@ def main():
 
     logging.info(f"Monitoring window activity every {interval} seconds.  Logging to {output_file}")
 
+    # I keep the start time next to the pair because duration is the difference of the two. If I only stored the pair, the Ended line would have to guess when the switch happened.
     previous_pair = None
     previous_since = None
 
@@ -174,6 +180,7 @@ def main():
 
                 if window_title and process_name:
                     current_pair = (window_title, process_name)
+                    # I compare the title and process pair, not the title alone. Switching between two windows of the same app with the same title is still a change a reader of this log would want, and staying on one window should not spam a line every interval.
                     if current_pair != previous_pair:
                         now = datetime.now()
                         close_previous(f, now)
@@ -191,6 +198,7 @@ def main():
     except KeyboardInterrupt:
         try:
             with open(output_file, "a") as f:
+                # The duration line for the last window only exists if I close it out here. Without this reopen, a Ctrl+C run would show when every window started and never how long the final one lasted.
                 close_previous(f, datetime.now())
         except OSError:
             pass
